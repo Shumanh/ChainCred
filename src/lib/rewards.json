@@ -1,0 +1,18 @@
+[
+  {
+    "bizId": "superteam-nepal",
+    "rewards": [
+      { "id": "stn-tshirt", "name": "SuperTeam T‑Shirt", "cost": 5 },
+      { "id": "stn-member", "name": "SuperTeam Member", "cost": 25 }
+    ]
+  },
+  {
+    "bizId": "zalient",
+    "rewards": [
+      { "id": "z-10pct", "name": "10% Discount", "cost": 7 },
+      { "id": "z-30pct", "name": "30% Discount", "cost": 20 }
+    ]
+  }
+]
+
+

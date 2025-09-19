@@ -1,0 +1,19 @@
+[ 
+  {
+    "id": "superteam-nepal",
+    "name": "SuperTeamNepal",
+    "mintAddress": "Gg1W1TzbCKtLJnyyNiBzzWZUHPpqhffKeqwRDviFU2Dk",
+    "mintAuthority": "",
+    "merchantRedemption": "2B7v2RLY6nWMyH9U4SxT199avSBBjSQL2tmVUd1yAPWe",
+    "token2022": true
+  },
+  {
+    "id": "zalient",
+    "name": "Zalient",
+    "mintAddress": "9ueEL5EPuV1ZaWMAKGaT5LNciQqm1JNHyYox4gwESHUS",
+    "mintAuthority": "",
+    "merchantRedemption": "2B7v2RLY6nWMyH9U4SxT199avSBBjSQL2tmVUd1yAPWe",
+    "token2022": true
+  }
+]
+

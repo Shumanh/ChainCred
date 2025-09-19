@@ -1,0 +1,36 @@
+{
+  "name": "dapp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build --turbopack",
+    "start": "next start",
+    "lint": "eslint",
+    "create:mint": "node scripts/create-mint.js",
+    "create:mint2022": "node scripts/create-mint-2022.js",
+    "gen:keypair": "node scripts/gen-keypair.js"
+  },
+  "dependencies": {
+    "@solana/spl-token": "^0.4.14",
+    "@solana/wallet-adapter-base": "^0.9.27",
+    "@solana/wallet-adapter-react": "^0.15.39",
+    "@solana/wallet-adapter-react-ui": "^0.9.39",
+    "@solana/wallet-adapter-wallets": "^0.19.37",
+    "@solana/web3.js": "^1.98.4",
+    "bs58": "^6.0.0",
+    "dotenv": "^17.2.2",
+    "mongoose": "^8.18.1",
+    "next": "15.5.3",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
+    "eslint": "^9",
+    "eslint-config-next": "15.5.3",
+    "tailwindcss": "^4"
+  }
+}
