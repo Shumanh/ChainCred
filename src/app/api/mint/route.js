@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
-import { dbConnect } from "../../../lib/mongo";
-import { ApiKey, Issuance, Business, RateLimit, Idempotency } from "../../../lib/models";
 import bs58 from "bs58";
 import {
   Connection,
@@ -33,6 +31,8 @@ function getEndpoint() {
 
 export async function POST(request) {
   try {
+    const { dbConnect } = await import("../../../lib/mongo");
+    const { ApiKey, Issuance, Business, RateLimit, Idempotency } = await import("../../../lib/models");
     await dbConnect();
     const rawKey = request.headers.get("x-api-key") || "";
     const keyHash = crypto.createHash("sha256").update(rawKey).digest("hex");
@@ -49,6 +49,8 @@ export async function POST(request) {
       return NextResponse.json({ error: "Server not configured (MINT_AUTHORITY_SECRET_KEY)" }, { status: 500 });
     }
 
+    const { Connection, Keypair, PublicKey } = await import("@solana/web3.js");
+    const bs58 = (await import("bs58")).default;
     const authority = Keypair.fromSecretKey(bs58.decode(secret));
     const connection = new Connection(getEndpoint(), "confirmed");
 
@@ -63,26 +65,27 @@ export async function POST(request) {
     const owner = new PublicKey(recipient);
 
     // Ensure recipient ATA
+    const spl = await import("@solana/spl-token");
+    const TOKEN_2022_PROGRAM_ID = new (await import("@solana/web3.js")).PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
     const ata = isToken2022
-      ? getAtaSync2022(mint, owner, false, TOKEN_2022_PROGRAM_ID)
-      : await getAssociatedTokenAddress(mint, owner);
+      ? spl.getAssociatedTokenAddressSync(mint, owner, false, TOKEN_2022_PROGRAM_ID)
+      : await spl.getAssociatedTokenAddress(mint, owner);
 
     let ixs = [];
     if (isToken2022) {
-      ixs.push(createAtaIdem2022(authority.publicKey, ata, owner, mint, TOKEN_2022_PROGRAM_ID));
+      ixs.push(spl.createAssociatedTokenAccountIdempotentInstruction(authority.publicKey, ata, owner, mint, TOKEN_2022_PROGRAM_ID));
     } else {
-      // Classic ATA may already exist; using idempotent would be nicer but keep simple
       try {
-        await getAccount(connection, ata);
+        await spl.getAccount(connection, ata);
       } catch (_) {
-        ixs.push(createAssociatedTokenAccountInstruction(authority.publicKey, ata, owner, mint));
+        ixs.push(spl.createAssociatedTokenAccountInstruction(authority.publicKey, ata, owner, mint));
       }
     }
 
     // Fetch decimals
     const decimals = isToken2022
-      ? (await getMint2022(connection, mint, undefined, TOKEN_2022_PROGRAM_ID)).decimals
-      : (await getMint(connection, mint)).decimals;
+      ? (await spl.getMint(connection, mint, undefined, TOKEN_2022_PROGRAM_ID)).decimals
+      : (await spl.getMint(connection, mint)).decimals;
 
     const maxPerTx = Number(process.env.MINT_MAX_PER_TX || 10);
     const maxPerDay = Number(process.env.MINT_MAX_PER_DAY || 100);
@@ -125,18 +128,14 @@ export async function POST(request) {
     await checkAndInc("1d", Number(process.env.MINT_PER_DAY || 1000));
 
     const mintIx = isToken2022
-      ? createMintToChecked2022(mint, ata, authority.publicKey, rawAmount, decimals, [], TOKEN_2022_PROGRAM_ID)
-      : createMintToCheckedInstruction(mint, ata, authority.publicKey, rawAmount, decimals);
+      ? spl.createMintToCheckedInstruction(mint, ata, authority.publicKey, rawAmount, decimals, [], TOKEN_2022_PROGRAM_ID)
+      : spl.createMintToCheckedInstruction(mint, ata, authority.publicKey, rawAmount, decimals);
 
     const tx = new (await import("@solana/web3.js")).Transaction().add(...ixs, mintIx);
     tx.feePayer = authority.publicKey;
     tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
 
-    const sig = await (await import("@solana/web3.js")).sendAndConfirmTransaction(
-      connection,
-      tx,
-      [authority]
-    );
+    const sig = await (await import("@solana/web3.js")).sendAndConfirmTransaction(connection, tx, [authority]);
 
     // persist issuance log
     await Issuance.create({

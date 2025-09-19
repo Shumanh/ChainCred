@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { dbConnect } from "../../../lib/mongo";
-import { Reward } from "../../../lib/models";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request) {
   try {
+    const { dbConnect } = await import("../../../lib/mongo");
+    const { Reward } = await import("../../../lib/models");
     await dbConnect();
     const { searchParams } = new URL(request.url);
     const bizId = searchParams.get("bizId");
