@@ -1,4 +1,5 @@
 "use client";
+export const dynamic = "force-static";
 
 import { useEffect, useMemo, useState } from "react";
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";

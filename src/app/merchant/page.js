@@ -1,4 +1,5 @@
 "use client";
+export const dynamic = "force-static";
 
 import { useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";

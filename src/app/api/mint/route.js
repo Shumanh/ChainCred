@@ -1,25 +1,5 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
-import bs58 from "bs58";
-import {
-  Connection,
-  Keypair,
-  PublicKey,
-} from "@solana/web3.js";
-import {
-  TOKEN_2022_PROGRAM_ID,
-  getMint as getMint2022,
-  getAssociatedTokenAddressSync as getAtaSync2022,
-  createAssociatedTokenAccountIdempotentInstruction as createAtaIdem2022,
-  createMintToCheckedInstruction as createMintToChecked2022,
-} from "@solana/spl-token";
-import {
-  getMint,
-  getAccount,
-  getAssociatedTokenAddress,
-  createAssociatedTokenAccountInstruction,
-  createMintToCheckedInstruction,
-} from "@solana/spl-token";
 
 export const dynamic = "force-dynamic";
 
