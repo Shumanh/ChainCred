@@ -107,7 +107,7 @@ export default function CustomerHome() {
       const idem = `mint-${publicKey.toBase58()}-${Date.now()}`;
       const res = await fetch("/api/mint", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": process.env.NEXT_PUBLIC_MERCHANT_API_KEY || "", "idempotency-key": idem },
+        headers: { "Content-Type": "application/json", "x-api-key": process.env.NEXT_PUBLIC_MERCHANT_API_KEY || "", "idempotency-key": idem, "x-biz-id": bizId || "" },
         body: JSON.stringify({ recipient: publicKey.toBase58(), amount: 1 }),
       });
       const data = await res.json();
