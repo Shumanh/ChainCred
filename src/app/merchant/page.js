@@ -1,18 +1,23 @@
 "use client";
-export const dynamic = "force-static";
+export const dynamic = "force-dynamic";
 
 import { useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { getConnection, buildMintTx } from "../../lib/solana";
 import { useMemo, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import Button from "../../components/ui/Button";
+import { PublicKey } from "@solana/web3.js"; // New import
+import { Suspense } from "react"; // New import
 
-export default function MerchantMint() {
+function MerchantMintContent() { // Wrap the component in a new function for Suspense
   const { connection } = useConnection();
   const { publicKey, signTransaction } = useWallet();
+  const searchParams = useSearchParams();
   const [customer, setCustomer] = useState("");
   const [amount, setAmount] = useState(1);
+  const [referralBonusRecipientAddress, setReferralBonusRecipientAddress] = useState(""); // New state for direct referral award
   const [loading, setLoading] = useState(false);
   const [businesses, setBusinesses] = useState([]);
   const [bizId, setBizId] = useState("");
@@ -20,6 +25,16 @@ export default function MerchantMint() {
   const mintAddress = biz?.mintAddress;
 
   useEffect(() => {
+    const referredBy = searchParams.get("referredBy");
+    const businessIdParam = searchParams.get("bizId");
+
+    if (referredBy) {
+      setReferralBonusRecipientAddress(referredBy); // Now sets the new dedicated field
+    }
+    if (businessIdParam) {
+      setBizId(businessIdParam);
+    }
+
     (async () => {
       try {
         const res = await fetch("/api/businesses");
@@ -43,6 +58,15 @@ export default function MerchantMint() {
     }
   }
 
+  function isValidSolanaAddress(address) {
+    try {
+      new PublicKey(address);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   async function mintToCustomer() {
     if (!publicKey || !customer) return;
     setLoading(true);
@@ -58,7 +82,7 @@ export default function MerchantMint() {
             "idempotency-key": idem,
             "x-biz-id": bizId || "",
           },
-          body: JSON.stringify({ recipient: customer, amount }),
+          body: JSON.stringify({ recipient: customer, amount }), // Removed referrerWalletAddress
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "mint failed");
@@ -149,8 +173,82 @@ export default function MerchantMint() {
           </Button>
           </div>
         </div>
+
+        {/* New section for awarding referral bonus directly */}
+        <div className="border-t border-slate-700 pt-4 mt-4">
+          <div className="flex flex-col gap-2 w-full">
+            <label className="text-sm opacity-80">Referral Bonus Recipient (2 points)</label>
+            <div className="flex gap-2 w-full">
+              <input
+                type="text"
+                placeholder="Enter referrer\'s Devnet address for bonus"
+                className="flex-1 border rounded px-2 py-1 bg-white text-black"
+                value={referralBonusRecipientAddress}
+                onChange={(e) => {
+                  const inputValue = e.target.value.trim();
+                  const referralPattern = /^(.*?)\&bizId=(.*)$/;
+                  const match = inputValue.match(referralPattern);
+
+                  if (match) {
+                    const [_, walletAddr, businessId] = match;
+                    setReferralBonusRecipientAddress(walletAddr);
+                    setBizId(businessId);
+                  } else {
+                    setReferralBonusRecipientAddress(inputValue);
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2 mt-2 justify-center">
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                if (!publicKey || !referralBonusRecipientAddress || !isValidSolanaAddress(referralBonusRecipientAddress)) return;
+                setLoading(true);
+                try {
+                  const idem = `referral-bonus-${referralBonusRecipientAddress}-${Date.now()}`;
+                  const res = await fetch("/api/mint", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      "x-api-key": process.env.NEXT_PUBLIC_MERCHANT_API_KEY || "",
+                      "idempotency-key": idem,
+                      "x-biz-id": bizId || "",
+                    },
+                    body: JSON.stringify({ recipient: referralBonusRecipientAddress, amount: 2, isReferralAwardMint: true, referralContextBizId: bizId }), // Fixed 2 points, set flag, add bizId
+                  });
+                  const data = await res.json();
+                  if (!res.ok) throw new Error(data.error || "Referral bonus mint failed");
+                  toast({
+                    title: "Referral Bonus Awarded!",
+                    message: `2 points minted to ${referralBonusRecipientAddress}. Transaction: ${data.signature}`,
+                    link: `https://explorer.solana.com/tx/${data.signature}?cluster=devnet`,
+                  });
+                  setReferralBonusRecipientAddress(""); // Clear after successful mint
+                } catch (e) {
+                  console.error(e);
+                  toast({ title: "Referral Bonus Failed", message: e?.message || "unknown" });
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              disabled={!publicKey || loading || !referralBonusRecipientAddress || !isValidSolanaAddress(referralBonusRecipientAddress)}
+            >
+              Award
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
+  );
+}
+
+export default function MerchantMint() {
+  return (
+    <Suspense fallback={<div>Loading merchant page...</div>}> {/* Wrap with Suspense */}
+      <MerchantMintContent />
+    </Suspense>
   );
 }
 

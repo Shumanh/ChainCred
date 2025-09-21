@@ -8,6 +8,7 @@ import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { getConnection, fetchTokenBalance, buildMintTx, buildBurnTx, buildTransferTx } from "../../lib/solana";
 import Button from "../../components/ui/Button";
 import { Card, CardBody, CardTitle } from "../../components/ui/Card";
+import Image from "next/image"; // New import
 
 export default function CustomerHome() {
   const { connection } = useConnection();
@@ -15,10 +16,11 @@ export default function CustomerHome() {
   const [businesses, setBusinesses] = useState([]);
   const [bizId, setBizId] = useState("");
   const biz = useMemo(() => businesses.find((b) => b.bizId === bizId) || businesses[0], [bizId, businesses]);
-  const [balance, setBalance] = useState(0);
+  const [balances, setBalances] = useState({}); // Changed from 'balance' to 'balances' object
   const [amount, setAmount] = useState(1);
   const [loading, setLoading] = useState(false);
   const [firstSeen, setFirstSeen] = useState(null);
+  const [customerData, setCustomerData] = useState(null); // New state for customer data
   const mintAddress = biz?.mintAddress;
   const mintAuthority = biz?.mintAuthority;
   const merchantRedemption = biz?.merchantRedemption;
@@ -45,13 +47,37 @@ export default function CustomerHome() {
     })();
   }, [bizId]);
 
+  // Fetch customer data
+  useEffect(() => {
+    (async () => {
+      if (!publicKey) return;
+      try {
+        const res = await fetch(`/api/customer/${publicKey.toBase58()}`);
+        if (res.ok) {
+          const data = await res.json();
+          // Ensure referralCounts is a Map instance when setting customerData
+          if (data.customer && typeof data.customer.referralCounts === 'object' && data.customer.referralCounts !== null && !(data.customer.referralCounts instanceof Map)) {
+            data.customer.referralCounts = new Map(Object.entries(data.customer.referralCounts));
+          }
+          setCustomerData(data.customer);
+        } else {
+          setCustomerData(null);
+        }
+      } catch (e) {
+        console.error("Failed to fetch customer data:", e);
+        setCustomerData(null);
+      }
+    })();
+  }, [publicKey, bizId]); // Added bizId as dependency
+
   useEffect(() => {
     (async () => {
       if (!ready) return;
       const conn = connection ?? (await getConnection());
       const bal = await fetchTokenBalance({ connection: conn, mint: mintAddress, owner: publicKey.toBase58() });
-      setBalance(bal);
-      const key = `firstSeen:${publicKey.toBase58()}:${mintAddress}`;
+      setBalances((prev) => ({ ...prev, [bizId]: bal })); // Update balance for current bizId
+
+      const key = `firstSeen:${publicKey.toBase58()}:${biz.mintAddress}`;
       const existing = localStorage.getItem(key);
       if (existing) setFirstSeen(Number(existing));
       else {
@@ -60,7 +86,7 @@ export default function CustomerHome() {
         setFirstSeen(now);
       }
     })();
-  }, [ready, connection, publicKey, mintAddress]);
+  }, [ready, connection, publicKey, mintAddress]); // Original balance useEffect
 
   async function submit(txBuilder) {
     if (!publicKey || !signTransaction) return;
@@ -86,7 +112,7 @@ export default function CustomerHome() {
       await conn.confirmTransaction(sig, "confirmed");
       toast({ title: "Transaction confirmed", message: sig, link: `https://explorer.solana.com/tx/${sig}?cluster=devnet` });
       const bal = await fetchTokenBalance({ connection: conn, mint: mintAddress, owner: publicKey.toBase58() });
-      setBalance(bal);
+      setBalances((prev) => ({ ...prev, [bizId]: bal })); // Update specific balance after transaction
     } catch (e) {
       console.error(e);
       toast({ title: "Transaction failed", message: e?.message || "unknown" });
@@ -114,7 +140,7 @@ export default function CustomerHome() {
       if (!res.ok) throw new Error(data.error || "mint failed");
       const conn = connection ?? (await getConnection());
       const bal = await fetchTokenBalance({ connection: conn, mint: mintAddress, owner: publicKey.toBase58() });
-      setBalance(bal);
+      setBalances((prev) => ({ ...prev, [bizId]: bal })); // Update specific balance after transaction
       toast({ title: "Minted", message: data.signature, link: `https://explorer.solana.com/tx/${data.signature}?cluster=devnet` });
     } catch (e) {
       console.error(e);
@@ -190,9 +216,23 @@ export default function CustomerHome() {
 
         {publicKey && (
           <div className="w-full flex flex-col items-center gap-6">
-            <div className="text-xl font-medium">Balance: {balance}</div>
-            {firstSeen && <Growth balance={balance} firstSeen={firstSeen} />}
+            <div className="text-xl font-medium">Balance: {balances[bizId] || 0}</div> {/* Display balance for current bizId */}
+            {firstSeen && <Growth balance={balances[bizId] || 0} firstSeen={firstSeen} />}
+            {customerData?.referralCounts && customerData.referralCounts.get(bizId) > 0 && (
+              <div className="text-sm opacity-80">Referrals: {customerData.referralCounts.get(bizId)}</div>
+            )}
             <MyAddressQR address={publicKey.toBase58()} />
+            <Button
+              variant="primary"
+              onClick={() => {
+                const referralInfo = `${publicKey.toBase58()}&bizId=${bizId}`;
+                navigator.clipboard.writeText(referralInfo);
+                toast({ title: "Referral Info Copied", message: "Share this ID and business with your friends!" });
+              }}
+              disabled={!publicKey || !bizId}
+            >
+              Share Referral Info
+            </Button>
 
             <Card className="w-full">
               <CardBody className="flex flex-col gap-4">
@@ -234,7 +274,7 @@ export default function CustomerHome() {
                   <Button
                     variant="info"
                     onClick={() => {
-                      if (amount > balance) {
+                      if (amount > balances[bizId] || 0) { // Use specific balance for amount check
                         toast({ title: "Redeem", message: "Not enough points" });
                         return;
                       }
@@ -242,7 +282,7 @@ export default function CustomerHome() {
                         buildTransferTx({ connection: conn, mint: mintAddress, from: publicKey.toBase58(), to: merchantRedemption, amount })
                       );
                     }}
-                    disabled={!ready || loading || !merchantRedemption || amount > balance}
+                    disabled={!ready || loading || !merchantRedemption || amount > balances[bizId] || 0} // Use specific balance for amount check
                   >
                     Redeem (Transfer to Merchant)
                   </Button>
@@ -252,7 +292,7 @@ export default function CustomerHome() {
 
             <RewardShop
               bizId={bizId}
-              balance={balance}
+              balance={balances[bizId] || 0} // Use specific balance for RewardShop
               canRedeem={!!merchantRedemption}
               onRedeem={async (reward) => {
                 let notified = false;
@@ -288,7 +328,7 @@ export default function CustomerHome() {
                   }
                   await conn.confirmTransaction(sig, "confirmed");
                   const bal = await fetchTokenBalance({ connection: conn, mint: mintAddress, owner: publicKey.toBase58() });
-                  setBalance(bal);
+                  setBalances((prev) => ({ ...prev, [bizId]: bal })); // Update specific balance after redeem
                   await fetch("/api/redeem-log", {
                     method: "POST",
                     headers: { "Content-Type": "application/json", "x-api-key": process.env.NEXT_PUBLIC_MERCHANT_API_KEY || "" },
@@ -325,8 +365,8 @@ function MyAddressQR({ address }) {
   const url = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(address)}`;
   return (
     <div className="flex flex-col items-center gap-1 opacity-80">
-      <img src={url} alt="QR" className="rounded" />
-      <div className="text-xs">Your address (scan at POS)</div>
+      <Image src={url} alt="QR" className="rounded" width={120} height={120} />
+      <div className="text-xs">Your Referral ID (scan at POS)</div>
     </div>
   );
 }

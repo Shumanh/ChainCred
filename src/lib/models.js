@@ -87,4 +87,18 @@ RewardSchema.index({ bizId: 1, id: 1 }, { unique: true });
 
 export const Reward = mongoose.models.Reward || mongoose.model("Reward", RewardSchema);
 
+const CustomerSchema = new Schema(
+  {
+    walletAddress: { type: String, required: true },
+    referredByWalletAddress: { type: String, default: null },
+    hasMadeFirstPurchase: { type: Boolean, default: false },
+    referralCounts: { type: Map, of: Number, default: {} }, // Changed to a Map keyed by bizId
+  },
+  { timestamps: true }
+);
+
+CustomerSchema.index({ walletAddress: 1 }, { unique: true });
+
+export const Customer = mongoose.models.Customer || mongoose.model("Customer", CustomerSchema);
+
 

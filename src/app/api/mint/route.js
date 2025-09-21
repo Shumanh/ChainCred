@@ -12,14 +12,15 @@ function getEndpoint() {
 export async function POST(request) {
   try {
     const { dbConnect } = await import("../../../lib/mongo");
-    const { ApiKey, Issuance, Business, RateLimit, Idempotency } = await import("../../../lib/models");
+    const { ApiKey, Issuance, Business, RateLimit, Idempotency, Customer } = await import("../../../lib/models");
     await dbConnect();
+    const spl = await import("@solana/spl-token"); // Moved this import to the top
     const rawKey = request.headers.get("x-api-key") || "";
     const keyHash = crypto.createHash("sha256").update(rawKey).digest("hex");
     const apiKeyDoc = await ApiKey.findOne({ keyHash, active: true });
     if (!apiKeyDoc) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { recipient, amount } = await request.json();
+    const { recipient, amount, referrerWalletAddress, isReferralAwardMint, referralContextBizId } = await request.json();
     if (!recipient || amount == null) {
       return NextResponse.json({ error: "recipient and amount required" }, { status: 400 });
     }
@@ -44,8 +45,82 @@ export async function POST(request) {
     const isToken2022 = (business.tokenProgram || "").toLowerCase() === "token2022";
     const owner = new PublicKey(recipient);
 
+    let recipientCustomerDoc = await Customer.findOne({ walletAddress: recipient });
+    if (!recipientCustomerDoc) {
+      recipientCustomerDoc = await Customer.create({ walletAddress: recipient });
+    }
+
+    // Helper to ensure referralCounts is a Map instance
+    const ensureReferralCountsIsMap = (doc) => {
+      if (!doc.referralCounts || !(doc.referralCounts instanceof Map)) {
+        doc.referralCounts = new Map(Object.entries(doc.referralCounts || {}));
+      }
+    };
+    ensureReferralCountsIsMap(recipientCustomerDoc);
+
+    let referralMintIx = null;
+    // Logic for when a NEW customer is being referred by an existing one
+    if (referrerWalletAddress && referrerWalletAddress !== recipient && !isReferralAwardMint) {
+      const referrerCustomerDoc = await Customer.findOne({ walletAddress: referrerWalletAddress });
+
+      if (referrerCustomerDoc) {
+        ensureReferralCountsIsMap(referrerCustomerDoc);
+
+        if (!recipientCustomerDoc.hasMadeFirstPurchase && !recipientCustomerDoc.referredByWalletAddress) {
+          // Valid referral - update documents and prepare bonus mint
+
+          // Update recipient's document to mark who referred them
+          recipientCustomerDoc.referredByWalletAddress = referrerWalletAddress;
+          await recipientCustomerDoc.save();
+
+          // Update referrer's document - increment referral count for the specific business
+          referrerCustomerDoc.referralCounts.set(business.bizId, (referrerCustomerDoc.referralCounts.get(business.bizId) || 0) + 1);
+          await referrerCustomerDoc.save();
+
+          // Prepare bonus mint instruction for referrer (this is the secondary mint)
+          const referrerOwner = new PublicKey(referrerWalletAddress);
+          const referrerAta = isToken2022
+            ? spl.getAssociatedTokenAddressSync(mint, referrerOwner, false, TOKEN_2022_PROGRAM_ID)
+            : await spl.getAssociatedTokenAddress(mint, referrerOwner);
+
+          // Ensure referrer ATA exists
+          try {
+            await spl.getAccount(connection, referrerAta); // Check if ATA already exists
+          } catch (_) {
+            // If not, add instruction to create it
+            ixs.push(isToken2022
+              ? spl.createAssociatedTokenAccountIdempotentInstruction(authority.publicKey, referrerAta, referrerOwner, mint, TOKEN_2022_PROGRAM_ID)
+              : spl.createAssociatedTokenAccountInstruction(authority.publicKey, referrerAta, referrerOwner, mint));
+          }
+
+          const rawReferralAmount = Math.round(referralBonusAmount * 10 ** decimals);
+          referralMintIx = isToken2022
+            ? spl.createMintToCheckedInstruction(mint, referrerAta, authority.publicKey, rawReferralAmount, decimals, [], TOKEN_2022_PROGRAM_ID)
+            : spl.createMintToCheckedInstruction(mint, referrerAta, authority.publicKey, rawReferralAmount, decimals);
+
+          // Log the referral bonus issuance (optional, but good for auditing)
+          await Issuance.create({
+            businessId: apiKeyDoc.businessId,
+            customer: referrerWalletAddress,
+            amount: referralBonusAmount,
+            signature: "pending_referral_bonus", // Will update with actual signature later
+          });
+        }
+      }
+    }
+
+    // Logic for when a merchant directly awards referral points to a referrer
+    if (isReferralAwardMint) {
+      // Validate that the business context for the referral award matches the requested business
+      if (referralContextBizId && referralContextBizId !== business.bizId) {
+        return NextResponse.json({ error: "Referral bonus can only be awarded for the business specified in the referral context." }, { status: 400 });
+      }
+      // The recipient of this mint is the referrer themselves. Increment their count for the specific business.
+      recipientCustomerDoc.referralCounts.set(business.bizId, (recipientCustomerDoc.referralCounts.get(business.bizId) || 0) + 1);
+      await recipientCustomerDoc.save();
+    }
+
     // Ensure recipient ATA
-    const spl = await import("@solana/spl-token");
     const TOKEN_2022_PROGRAM_ID = new (await import("@solana/web3.js")).PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
     const ata = isToken2022
       ? spl.getAssociatedTokenAddressSync(mint, owner, false, TOKEN_2022_PROGRAM_ID)
@@ -69,6 +144,7 @@ export async function POST(request) {
 
     const maxPerTx = Number(process.env.MINT_MAX_PER_TX || 10);
     const maxPerDay = Number(process.env.MINT_MAX_PER_DAY || 100);
+    const referralBonusAmount = Number(process.env.REFERRAL_BONUS_AMOUNT || 2); // Changed default to 2 for demo
     const uiAmount = Number(amount);
     if (uiAmount <= 0 || uiAmount > maxPerTx) {
       return NextResponse.json({ error: `amount must be between 1 and ${maxPerTx}` }, { status: 400 });
@@ -112,18 +188,36 @@ export async function POST(request) {
       : spl.createMintToCheckedInstruction(mint, ata, authority.publicKey, rawAmount, decimals);
 
     const tx = new (await import("@solana/web3.js")).Transaction().add(...ixs, mintIx);
+    if (referralMintIx) {
+      tx.add(referralMintIx);
+    }
     tx.feePayer = authority.publicKey;
     tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
 
     const sig = await (await import("@solana/web3.js")).sendAndConfirmTransaction(connection, tx, [authority]);
 
-    // persist issuance log
+    // Persist issuance log for recipient
     await Issuance.create({
       businessId: apiKeyDoc.businessId,
       customer: recipient,
       amount: uiAmount,
       signature: sig,
     });
+
+    // Update recipient's first purchase status ONLY if it was a new customer getting points
+    // This ensures we only set hasMadeFirstPurchase to true for actual new customers receiving their first points
+    if (!isReferralAwardMint) {
+      recipientCustomerDoc.hasMadeFirstPurchase = true;
+      await recipientCustomerDoc.save();
+    }
+
+    // Update referral bonus issuance signature if applicable (from the primary referral flow)
+    if (referralMintIx) {
+      await Issuance.findOneAndUpdate(
+        { businessId: apiKeyDoc.businessId, customer: referrerWalletAddress, signature: "pending_referral_bonus" },
+        { $set: { signature: sig } }
+      );
+    }
 
     if (idemKey) {
       await Idempotency.findOneAndUpdate(

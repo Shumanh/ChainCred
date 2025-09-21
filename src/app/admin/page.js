@@ -7,35 +7,34 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [bizId, setBizId] = useState("");
 
-  async function refresh() {
-    setLoading(true);
-    try {
-      const qs = new URLSearchParams();
-      if (bizId) qs.set("bizId", bizId);
-      qs.set("type", "all");
-      qs.set("limit", "500");
-      const res = await fetch(`/api/logs?${qs.toString()}`);
-      const data = await res.json();
-      const rows = [
-        ...(data.issuances || []).map((x) => ({ _id: x._id, kind: "issuance", createdAt: x.createdAt, customer: x.customer, amount: x.amount, signature: x.signature })),
-        ...(data.redemptions || []).map((x) => ({ _id: x._id, kind: "redemption", createdAt: x.createdAt, customer: x.customer, rewardId: x.rewardId, rewardName: x.rewardName, cost: x.cost, signature: x.signature })),
-      ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      setLogs(rows);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
-    refresh();
-  }, []);
+    async function fetchLogs() {
+      setLoading(true);
+      try {
+        const qs = new URLSearchParams();
+        if (bizId) qs.set("bizId", bizId);
+        qs.set("type", "all");
+        qs.set("limit", "500");
+        const res = await fetch(`/api/logs?${qs.toString()}`);
+        const data = await res.json();
+        const rows = [
+          ...(data.issuances || []).map((x) => ({ _id: x._id, kind: "issuance", createdAt: x.createdAt, customer: x.customer, amount: x.amount, signature: x.signature })),
+          ...(data.redemptions || []).map((x) => ({ _id: x._id, kind: "redemption", createdAt: x.createdAt, customer: x.customer, rewardId: x.rewardId, rewardName: x.rewardName, cost: x.cost, signature: x.signature })),
+        ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        setLogs(rows);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchLogs();
+  }, [bizId]);
 
   return (
     <div className="min-h-screen p-8">
       <h1 className="text-2xl font-semibold mb-4">Admin - Logs</h1>
       <div className="flex items-center gap-2">
         <input className="border rounded px-2 py-1 bg-white text-black" placeholder="Filter by bizId (optional)" value={bizId} onChange={(e) => setBizId(e.target.value)} />
-        <button className="px-3 py-1 rounded bg-slate-700" onClick={refresh} disabled={loading}>
+        <button className="px-3 py-1 rounded bg-slate-700" onClick={() => fetchLogs()} disabled={loading}>
           {loading ? "Refreshing..." : "Refresh"}
         </button>
         <button className="px-3 py-1 rounded bg-slate-700" onClick={() => downloadCsv(logs)} disabled={logs.length === 0}>Export CSV</button>
