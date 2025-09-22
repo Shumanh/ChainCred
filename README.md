@@ -21,8 +21,9 @@ Think “Buy 9 coffees, get the 10th free” — but smarter, clearer, and yours
 - Your points belong to you: they’re in your wallet, not hidden in a company database.
 - Transparent by default: every earn and redeem has a public receipt (a transaction link).
 - Works across shops: one wallet can hold points from multiple businesses.
-- Optional growth: points can increase over time if a business turns on “growth,” like interest.
+- Optional Growth: Your loyalty points can increase over time, similar to earning interest, if a business enables this feature. This provides a clear incentive for long-term loyalty.
 - Fast and simple: actions feel like tapping a button; confirmations are quick.
+- Referral Program: Customers can easily refer new users by sharing a unique link. When a referred customer makes a qualifying purchase, both the referrer and the new customer can earn bonus loyalty points, all verifiable on the Solana blockchain.
 
 ---
 
@@ -63,7 +64,8 @@ No sign‑ups. No password resets. Your wallet is your key.
 
 - Earn points: issued by the shop to your wallet.
 - Redeem rewards: transfer points to the shop’s redemption wallet with one click.
-- Growth (optional): shops can enable a simple “APY‑style” growth so your points increase over time. This is clearly shown in the app.
+- Referral Program: Chain-Cred includes a robust referral system where customers can earn 2 bonus points for each successful referral to a participating business. All referral transactions are recorded on the Solana blockchain, ensuring transparency and verifiability.
+- Growth (optional): Shops can enable a simple “APY‑style” growth rate on loyalty points, allowing your points balance to increase over time. The projected growth is clearly displayed in the customer app, encouraging longer-term engagement.
 - Multi‑business: switch shops from a dropdown; each can have its own reward list.
 - Receipts: after any action, you get a link to a public receipt (the transaction) for peace of mind.
 
@@ -125,15 +127,15 @@ Chain‑Cred issues loyalty as on‑chain tokens that customers actually own, wi
 - Frontend: Next.js (App Router), React. Customer and Merchant pages are prerendered (static) for fast loads.
 - APIs: Next.js server routes for minting, logs, rewards, and businesses. Heavy SDKs are dynamically imported to keep bundles small.
 - Blockchain: Solana using SPL Token and optional Token‑2022 (Token Extensions) for advanced flows.
-- Database: MongoDB (Mongoose) for API keys, idempotency, issuance logs, rate limits, and catalogs.
+- Database: MongoDB (Mongoose) for API keys, idempotency, issuance logs, rate limits, catalogs, and customer referral data.
 
-Flow: merchant mints tokens to a customer wallet → customer sees balance and redeems → server logs activity for auditability.
+Flow: merchant mints tokens to a customer wallet → customer sees balance and redeems → server logs activity for auditability; customer refers new users for bonus points.
 
 ### Token model (SPL + Token‑2022)
 
 - Each business has its own mint (SPL by default). Customers hold tokens in their wallet (Phantom/Solflare).
 - Token‑2022 support: checked instructions and `TOKEN_2022_PROGRAM_ID` for ATAs/mints/transfers.
-- Growth: UI can simulate an APY‑style increase. Future: move to Token‑2022 interest extension for on‑chain accrual.
+- Growth: The customer UI currently simulates an APY‑style increase in points based on a configurable rate (`NEXT_PUBLIC_GROWTH_RATE`). In the future, this will transition to fully on‑chain accrual using the Token‑2022 interest extension, making the growth trustless and blockchain-verified.
 
 Where in code: `src/lib/solana.js`, `src/app/api/mint/route.js` branch on Token‑2022.
 
